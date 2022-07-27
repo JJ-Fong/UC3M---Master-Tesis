@@ -1,1 +1,1 @@
-# UC3M---Master-Tesis
+This repository contains all the data and code regarding the master thesis written by Javier Josue Fong in order to graduate from the UC3M Master in Statistics for Data Science
