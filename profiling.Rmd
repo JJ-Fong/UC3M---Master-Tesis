@@ -1,0 +1,308 @@
+---
+title: "Informal Care Profiling" 
+subtitle: "Master Tesis"
+author: "Javier Fong"
+output: 
+  html_document:
+    code_folding: show
+    toc: true
+    toc_float: true
+    toc_depth: 4
+    theme: flatly
+---
+
+
+```{r, echo = F, message=F}
+library(plyr)
+library(dplyr)
+library(tidyverse)
+library(sf)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(rgeos)
+library(gridExtra)
+library(reshape2)
+library(corrplot)
+library(strex)
+library(factoextra)
+library(clustMixType)
+library(cluster)
+```
+
+
+```{r}
+library(rstudioapi)
+setwd(dirname(getActiveDocumentContext()$path)) 
+knitr::opts_chunk$set(
+  echo = T
+  , warning = F
+  , message = F
+)
+```
+
+```{r}
+load("share_dataframe.RData")
+```
+
+# Variable Selection 
+
+I'll create a row for each country and gender. In each row i'll summarise the 3 most common conditions, adl (a/b) inabilities, in house and out house caretakers and types of care. All these are categorical variables. 
+
+## Conditions 
+
+```{r}
+conditions = share_data %>% 
+  dplyr::select(wght_individual, dn_country, dn_gender, starts_with("ph_doccond")) %>% 
+  melt(id = c("wght_individual","dn_country", "dn_gender")) %>% 
+  dplyr::filter(value == "Selected", !grepl("none", variable)) %>% 
+  dplyr::group_by(dn_country, dn_gender, variable) %>% 
+  dplyr::summarise(group_pop = sum(wght_individual)) %>% 
+  dplyr::ungroup() %>% 
+  dplyr::group_by(dn_country, dn_gender) %>% 
+  dplyr::arrange(desc(group_pop)) %>% 
+  dplyr::slice(1:3) %>% 
+  dplyr::mutate(
+    varname = paste("condition_", row_number(), sep ="")
+    , variable = as.factor(str_after_nth(as.character(variable), "_", 2))
+  )  %>% 
+  dplyr::select(dn_country, dn_gender, varname, variable) %>% 
+  dcast(dn_country + dn_gender ~ varname) 
+
+conditions %>% head() 
+```
+
+
+## ADL Inabilities 
+
+### ADL A
+
+```{r}
+adla_inabilities =share_data %>% 
+  dplyr::select(wght_individual, dn_country, dn_gender, starts_with("ph_ADLa")) %>% 
+  melt(id = c("wght_individual","dn_country", "dn_gender")) %>% 
+  dplyr::filter(value == "Selected", !grepl("none", variable)) %>% 
+  dplyr::group_by(dn_country, dn_gender, variable) %>% 
+  dplyr::summarise(group_pop = sum(wght_individual)) %>% 
+  dplyr::ungroup() %>% 
+  dplyr::group_by(dn_country, dn_gender) %>% 
+  dplyr::arrange(desc(group_pop)) %>% 
+  dplyr::slice(1:3) %>% 
+  dplyr::mutate(
+    varname = paste("adla_", row_number(), sep ="")
+    , variable = as.factor(str_after_nth(as.character(variable), "_", 2))
+  )  %>% 
+  dplyr::select(dn_country, dn_gender, varname, variable) %>% 
+  dcast(dn_country + dn_gender ~ varname) 
+
+adla_inabilities %>% head()
+```
+
+```{r}
+adlb_inabilities = share_data %>% 
+  dplyr::select(wght_individual, dn_country, dn_gender, starts_with("ph_ADLb")) %>% 
+  melt(id = c("wght_individual","dn_country", "dn_gender")) %>% 
+  dplyr::filter(value == "Selected", !grepl("none", variable)) %>% 
+  dplyr::group_by(dn_country, dn_gender, variable) %>% 
+  dplyr::summarise(group_pop = sum(wght_individual)) %>% 
+  dplyr::ungroup() %>% 
+  dplyr::group_by(dn_country, dn_gender) %>% 
+  dplyr::arrange(desc(group_pop)) %>% 
+  dplyr::slice(1:3) %>% 
+  dplyr::mutate(
+    varname = paste("adlb_", row_number(), sep ="")
+    , variable = as.factor(str_after_nth(as.character(variable), "_", 2))
+  )  %>% 
+  dplyr::select(dn_country, dn_gender, varname, variable) %>% 
+  dcast(dn_country + dn_gender ~ varname) 
+
+adlb_inabilities %>% head()
+```
+
+
+## Outside House Carers
+
+```{r}
+out_care = share_data %>% 
+  dplyr::select(wght_individual, dn_country, dn_gender, starts_with("sp_helpfrom_OH")) %>% 
+  dplyr::select(-sp_helpfrom_OH) %>% 
+  melt(id = c("wght_individual", "dn_country", "dn_gender")) %>% 
+  dplyr::filter(!is.na(value)) %>% 
+  dplyr::group_by(dn_country, dn_gender, value) %>% 
+  dplyr::summarise(group_pop = sum(wght_individual)) %>% 
+  dplyr::ungroup() %>% 
+  dplyr::group_by(dn_country, dn_gender) %>% 
+  dplyr::arrange(desc(group_pop)) %>% 
+  dplyr::slice(1:3) %>% 
+  dplyr::mutate(varname = paste("care_outside", row_number(), sep = "_")) %>% 
+  dcast(dn_country + dn_gender ~ varname)
+
+out_care %>% head()
+```
+
+## In House Carers 
+
+```{r}
+in_care = share_data %>% 
+  dplyr::select(wght_individual, dn_country, dn_gender, starts_with("sp_helpfrom_IH")) %>% 
+  dplyr::select(-sp_helpfrom_IH) %>% 
+  melt(id = c("wght_individual", "dn_country", "dn_gender")) %>% 
+  dplyr::filter(value == "Selected") %>% 
+  dplyr::group_by(dn_country, dn_gender, variable) %>% 
+  dplyr::summarise(group_pop = sum(wght_individual)) %>% 
+  dplyr::ungroup() %>% 
+  dplyr::group_by(dn_country, dn_gender) %>% 
+  dplyr::arrange(desc(group_pop)) %>% 
+  dplyr::slice(1:3) %>% 
+  dplyr::mutate(
+    variable = str_after_nth(as.character(variable), "_", 3)
+    , varname = paste("care_inside", row_number(), sep = "_")
+  ) %>% 
+  dplyr::select(-group_pop) %>%
+  dcast(... ~ varname, value.var = "variable")
+
+in_care %>% head()
+```
+
+## Numerical Variables
+
+```{r}
+country_gender_pop = share_data %>% 
+  dplyr::group_by(dn_country, dn_gender) %>% 
+  dplyr::summarise(pop = sum(wght_individual)) 
+
+profhelp_perc = share_data %>%
+  dplyr::select(wght_individual, dn_country, dn_gender, starts_with("hc_profhelp")) %>% 
+  dplyr::select(-ends_with("hrs"), -ends_with("wks"), -ends_with("none"))  %>% 
+  dplyr::mutate(
+    profhelp = as.numeric(
+      hc_profhelp_personal == "Selected" | hc_profhelp_domestic == "Selected"| hc_profhelp_meals == "Selected" | hc_profhelp_other == "Selected"
+      ) * wght_individual
+  ) %>% 
+  dplyr::group_by(dn_country, dn_gender) %>% 
+  dplyr::summarise(profhelp_pop = sum(profhelp, na.rm = T)) %>% 
+  merge(country_gender_pop, by = c("dn_country", "dn_gender")) %>% 
+  dplyr::mutate(profhelp_perc = profhelp_pop / pop)
+
+HH_help = share_data %>% 
+  dplyr::select(wght_individual, dn_country, dn_gender, sp_helpfrom_IH, sp_helpfrom_OH)  %>% 
+  dplyr::mutate(
+    sp_helpfrom_IH = as.numeric(ifelse(is.na(sp_helpfrom_IH), F, sp_helpfrom_IH == "Yes")) * wght_individual
+    , sp_helpfrom_OH = as.numeric(ifelse(is.na(sp_helpfrom_OH), F, sp_helpfrom_OH == "Yes")) * wght_individual
+  ) %>% 
+  dplyr::group_by(dn_country, dn_gender) %>% 
+  dplyr::summarise(
+    help_IH_pop = sum(sp_helpfrom_IH)
+    , help_OH_pop = sum(sp_helpfrom_OH)
+  ) %>% 
+  merge(country_gender_pop, by = c("dn_country", "dn_gender")) %>% 
+  dplyr::mutate(
+    help_IH_perc = help_IH_pop / pop 
+    , help_OH_perc = help_OH_pop / pop 
+  )
+
+quant_vars = merge(
+  profhelp_perc %>% dplyr::select(dn_country, dn_gender, profhelp_perc)
+  , HH_help %>% dplyr::select(dn_country, dn_gender, ends_with("perc"))
+  , by = c("dn_country", "dn_gender")
+)
+
+quant_vars = quant_vars %>% 
+  dplyr::mutate(across(contains("perc"), ~(. * 10000)))
+
+quant_vars %>% head() 
+cor(quant_vars %>% select_if(is.numeric)) %>% corrplot(addCoef.col = "black", type = "upper", diag = F)
+```
+
+
+## Merging 
+
+```{r}
+profiling_data = join_all(
+  list(conditions, adla_inabilities, adlb_inabilities, out_care, in_care, quant_vars)
+  , by = c("dn_country", "dn_gender")
+  , type = "left"
+)
+
+profiling_data[is.na(profiling_data)] = "None" 
+```
+
+
+# Gower Distance 
+
+## Males
+
+```{r, fig.show='hold', out.width= "50%"}
+
+male_cluster_data = profiling_data %>% dplyr::filter(dn_gender == "Male") %>% mutate_if(is.character, as.factor)
+
+male_gower_dist = daisy(
+  male_cluster_data
+  , metric = "gower"
+) %>% as.matrix()
+
+fviz_nbclust(
+  male_gower_dist
+  , cluster::pam
+  , method="silhouette"
+  , k.max = 10
+) 
+
+pam_males = pam(
+  male_gower_dist 
+  , k = 6
+  , diss = T
+)
+
+male_cluster_data$cluster = as.factor(pam_males$clustering)
+
+world = ne_countries(scale = "medium", returnclass = "sf")
+Europe = world[which(world$continent == "Europe"),]
+
+male_cluster_data %>% 
+  merge(Europe, by.x = "dn_country", by.y = "name", all.y = T) %>% 
+  ggplot() + 
+  geom_sf(aes(geometry = geometry, fill = cluster)) +
+  coord_sf(xlim = c(-25,50), ylim = c(35,70), expand = FALSE) + 
+  theme_minimal() 
+
+male_cluster_data[pam_males$id.med,]
+```
+
+## Females
+
+```{r, fig.show='hold', out.width= "50%"}
+female_cluster_data = profiling_data %>% dplyr::filter(dn_gender == "Female") %>% mutate_if(is.character, as.factor)
+
+female_gower_dist = daisy(
+  female_cluster_data
+  , metric = "gower"
+) %>% as.matrix()
+
+fviz_nbclust(
+  female_gower_dist
+  , cluster::pam
+  , method="silhouette"
+  , k.max = 10
+) 
+
+pam_females = pam(
+  female_gower_dist 
+  , k = 4
+  , diss = T
+)
+
+female_cluster_data$cluster = as.factor(pam_females$clustering)
+
+world = ne_countries(scale = "medium", returnclass = "sf")
+Europe = world[which(world$continent == "Europe"),]
+
+female_cluster_data %>% 
+  merge(Europe, by.x = "dn_country", by.y = "name", all.y = T) %>% 
+  ggplot() + 
+  geom_sf(aes(geometry = geometry, fill = cluster)) +
+  coord_sf(xlim = c(-25,50), ylim = c(35,70), expand = FALSE) + 
+  theme_minimal() 
+
+female_cluster_data[pam_females$id.med,]
+```
+

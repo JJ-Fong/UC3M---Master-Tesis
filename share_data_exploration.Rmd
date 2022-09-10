@@ -1,0 +1,801 @@
+---
+title: SHARE (Wave 8) Data Exploration
+author: Javier J. Fong 
+
+output: 
+  bookdown::html_document2:
+    code_folding: show
+    toc: true
+    toc_float: true
+    toc_depth: 4
+    theme: flatly
+---
+
+```{r enviroment, echo = F}
+# Env
+library(rstudioapi)
+setwd(dirname(getActiveDocumentContext()$path)) 
+knitr::opts_chunk$set(
+  fig.width=15
+  , fig.align = 'center'
+  , fig.height = 8
+  , fig.topcaption = T
+  , echo = F
+  , warning = F
+  , message = F
+)
+corrplot_defaultp_colpallete = colorRampPalette(c("red","white", "blue"))(200)
+```
+
+```{r dependencies}
+#Default libraries
+library(plyr)
+library(dplyr)
+library(kableExtra) 
+library(tidyverse)
+library(haven)
+library(sf)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(rgeos)
+library(gridExtra)
+library(lubridate)
+library(reshape2)
+library(psych)
+library(corrplot)
+
+```
+
+
+```{r}
+files_path = file.path(paste(getwd(), "/share_data", sep = ""))
+```
+
+
+```{r weight-file}
+weights_file_path = paste(files_path,"/sharew8_rel8-0-0_gv_weights.sav", sep = "")  
+weights_file = read_sav(weights_file_path)
+weights_file = weights_file %>% 
+  dplyr::select(
+    mergeid
+    , hhid8 
+    , mergeidp8
+    , coupleid8
+    , wght_household = cchw_w8_main
+    , wght_individual = cciw_w8_main 
+  ) 
+```
+
+
+```{r demographic-file}
+dn_file_path = paste(files_path,"/sharew8_rel8-0-0_dn.sav", sep = "")  
+dn_file = read_sav(dn_file_path)
+dn_file = dn_file %>% 
+  dplyr::select(
+    #Primary key
+    mergeid
+    , hhid8
+    , mergeidp8
+    , coupleid8
+    #Variables
+    , dn_country = country 
+    , dn_language = language 
+    , dn_gender = dn042_
+    , dn_birthmonth = dn002_
+    , dn_birthyear = dn003_
+  ) %>% 
+  dplyr::mutate_if(haven::is.labelled, haven::as_factor) %>% 
+  dplyr::mutate(
+    est_age = as.numeric(difftime(
+      Sys.Date()
+      , as.Date(ymd(paste(dn_birthyear, dn_birthmonth, 1, sep ="-")))
+      , unit = "weeks"
+    )/52) %>% round()
+  )
+```
+
+
+```{r physicalHealth-file}
+ph_file_path = paste(files_path,"/sharew8_rel8-0-0_ph.sav", sep = "")  
+ph_file = read_sav(ph_file_path)
+ph_file = ph_file %>% 
+  dplyr::select(
+    #Primary key
+    mergeid
+    , hhid8
+    , mergeidp8
+    , coupleid8
+    #Variables
+    , ph_healthperception = ph003_
+    , ph_longtermill = ph004_ 
+    , ph_doccond_heartattack = ph006d1
+    , ph_doccond_highpress = ph006d2
+    , ph_doccond_highcolesterol = ph006d3
+    , ph_doccond_stroke = ph006d4
+    , ph_doccond_diabetes = ph006d5
+    , ph_doccond_lungdisease = ph006d6
+    , ph_doccond_cancer = ph006d10
+    , ph_doccond_stomach = ph006d11
+    , ph_doccond_parkinsons = ph006d12
+    , ph_doccond_cataracts = ph006d13
+    , ph_doccond_hipfracture = ph006d14
+    , ph_doccond_otherfractures = ph006d15
+    , ph_doccond_memorydisease = ph006d16
+    , ph_doccond_emotionaldisorder = ph006d18
+    , ph_doccond_rheumatoidArthritis = ph006d19
+    , ph_doccond_otherrheumatism = ph006d20
+    , ph_doccond_kidney = ph006d21
+    , ph_doccond_none = ph006dno
+    , ph_doccond_other = ph006dot 
+    , ph_currentdrugs_highcolesterol = ph011d1
+    , ph_currentdrugs_highpressure = ph011d2
+    , ph_currentdrugs_coronarydisease = ph011d3
+    , ph_currentdrugs_heartdisease = ph011d4
+    , ph_currentdrugs_diabetes = ph011d6
+    , ph_currentdrugs_joint = ph011d7
+    , ph_currentdrugs_pain = ph011d8
+    , ph_currentdrugs_sleep = ph011d9
+    , ph_currentdrugs_anxiety = ph011d10
+    , ph_currentdrugs_osteoporosis = ph011d11
+    , ph_currentdrugs_stomach = ph011d13
+    , ph_currentdrugs_bronchitis = ph011d14
+    , ph_currentdrugs_inflammation = ph011d15
+    , ph_currentdrugs_none = ph011dno
+    , ph_currentdrugs_other = ph011dot
+    , ph_weight = ph012_
+    , ph_height = ph013_
+    , ph_ADLa_walk100m = ph048d1 
+    , ph_ADLa_sitting2h = ph048d2
+    , ph_ADLa_gettingup = ph048d3
+    , ph_ADLa_climbstairs = ph048d4
+    , ph_ADLa_climb1stair = ph048d5
+    , ph_ADLa_kneeling = ph048d6
+    , ph_ADLa_armsaboveshoulder = ph048d7
+    , ph_ADLa_movinglargeobj = ph048d8
+    , ph_ADLa_moving5kg = ph048d9
+    , ph_ADLa_pickcoin = ph048d10
+    , ph_ADLa_none = ph048dno
+    , ph_ADLb_dressing = ph049d1
+    , ph_ADLb_walking = ph049d2
+    , ph_ADLb_bathing = ph049d3
+    , ph_ADLb_eating = ph049d4
+    , ph_ADLb_outofbed = ph049d5
+    , ph_ADLb_toilet = ph049d6
+    , ph_ADLb_readmap = ph049d7
+    , ph_ADLb_cooking = ph049d8
+    , ph_ADLb_groceries = ph049d9
+    , ph_ADLb_phonecalls = ph049d10
+    , ph_ADLb_takemeds = ph049d11
+    , ph_ADLb_housework = ph049d12
+    , ph_ADLb_managemoney = ph049d13
+    , ph_ADLb_transportation = ph049d14
+    , ph_ADLb_laundry = ph049d15
+    , ph_ADLb_none = ph049dno
+    , ph_receiveshelp = ph050_
+    , ph_helpquality = ph051_
+    , ph_useaids_cane = ph059d1
+    , ph_useaids_walker = ph059d2
+    , ph_useaids_wheelchair = ph059d3
+    , ph_useaids_electricwheelchair = ph059d4
+    , ph_useaids_scooter = ph059d5
+    , ph_useaids_eatingutensils = ph059d6
+    , ph_useaids_alarm = ph059d7
+    , ph_useaids_rails = ph059d8
+    , ph_useaids_specialtoilet = ph059d9
+    , ph_useaids_pads = ph059d10
+    , ph_useaids_none = ph059dno
+    , ph_useaids_other = ph059dot
+   ) %>% 
+  dplyr::mutate_if(haven::is.labelled, haven::as_factor)
+  
+```
+
+
+```{r healthCare-file}
+hc_file_path = paste(files_path,"/sharew8_rel8-0-0_hc.sav", sep = "")
+hc_file = read_sav(hc_file_path)
+hc_file = hc_file %>% 
+  dplyr::select(
+    mergeid
+    , hhid8 
+    , mergeidp8
+    , coupleid8
+    , hc_forgocarecost_generalphysician = hc841d1
+    , hc_forgocarecost_specialistphysician = hc841d2
+    , hc_forgocarecost_drugs = hc841d3
+    , hc_forgocarecost_dental = hc841d4
+    , hc_forgocarecost_optical = hc841d5
+    , hc_forgocarecost_homecare = hc841d6
+    , hc_forgocarecost_domestichelp = hc841d7
+    , hc_forgocarecost_none = hc841dno
+    , hc_forgocarecost_other = hc841dot
+    , hc_forgocareunav_generalphysician = hc843d1
+    , hc_forgocareunav_specialistphysician = hc843d2
+    , hc_forgocareunav_drugs = hc843d3
+    , hc_forgocareunav_dental = hc843d4
+    , hc_forgocareunav_optical = hc843d5
+    , hc_forgocareunav_homecare = hc843d6
+    , hc_forgocareunav_domestichelp = hc843d7
+    , hc_forgocareunav_none = hc843dno
+    , hc_forgocareunav_other = hc843dot
+    , hc_profhelp_personal = hc127d1 
+    , hc_profhelp_domestic = hc127d2
+    , hc_profhelp_meals = hc127d3
+    , hc_profhelp_other = hc127d4
+    , hc_profhelp_none = hc127dno
+    , hc_profhelp_personal_wks = hc033_ #Avg weeks of professional help last year for personal care
+    , hc_profhelp_personal_hrs = hc034_ #Avg hrs of professional help last year for personal care
+    , hc_profhelp_domestic_wks = hc035_
+    , hc_profhelp_domestic_hrs = hc036_
+    , hc_profhelp_meals_wks = hc037_ 
+    , hc_nursehome = hc029_ 
+    , hc_nursehome_wks = hc031_
+  ) %>% 
+  dplyr::mutate_if(haven::is.labelled, haven::as_factor)
+
+```
+
+
+```{r employment-file}
+sp_file_path = paste(files_path,"/sharew8_rel8-0-0_sp.sav", sep = "")
+sp_file = read_sav(sp_file_path)
+sp_file = sp_file %>% 
+  dplyr::select(
+    mergeid
+    , hhid8 
+    , mergeidp8
+    , coupleid8
+    , sp_helpfrom_OH = sp002_
+    , sp_helpfrom_OH_1 = sp003_1
+    , sp_helpfrom_OH_2 = sp003_2
+    , sp_helpfrom_OH_3 = sp003_3
+    , sp_helptype_OH_personal_1 = sp004d1_1
+    , sp_helptype_OH_household_1 = sp004d2_1
+    , sp_helptype_OH_paperwork_1 = sp004d3_1
+    , sp_helptype_OH_personal_2 = sp004d1_2
+    , sp_helptype_OH_household_2 = sp004d2_2
+    , sp_helptype_OH_paperwork_2 = sp004d3_2
+    , sp_helptype_OH_personal_3 = sp004d1_3
+    , sp_helptype_OH_household_3 = sp004d2_3
+    , sp_helptype_OH_paperwork_3 = sp004d3_3
+    , sp_helpfrom_IH = sp020_
+    , sp_helpfrom_IH_partner = sp021d1
+    , sp_helpfrom_IH_mother = sp021d2
+    , sp_helpfrom_IH_father = sp021d3
+    , sp_helpfrom_IH_motherinlaw = sp021d4
+    , sp_helpfrom_IH_fatherinlaw = sp021d5
+    , sp_helpfrom_IH_stepmother = sp021d6
+    , sp_helpfrom_IH_stepfather = sp021d7
+    , sp_helpfrom_IH_brother = sp021d8
+    , sp_helpfrom_IH_sister = sp021d9
+    , sp_helpfrom_IH_child = sp021d10
+    , sp_helpfrom_IH_stepchild = sp021d11
+    , sp_helpfrom_IH_soninlaw = sp021d20
+    , sp_helpfrom_IH_daugtherinlaw = sp021d21
+    , sp_helpfrom_IH_grandchild = sp021d22
+    , sp_helpfrom_IH_grandparent = sp021d23
+    , sp_helpfrom_IH_aunt = sp021d24
+    , sp_helpfrom_IH_uncle = sp021d25
+    , sp_helpfrom_IH_niece = sp021d26
+    , sp_helpfrom_IH_nephew = sp021d27
+    , sp_helpfrom_IH_otherrelative = sp021d28
+    , sp_helpfrom_IH_friend = sp021d29
+    , sp_helpfrom_IH_colleague = sp021d30
+    , sp_helpfrom_IH_neighbour = sp021d31
+    , sp_helpfrom_IH_expartner= sp021d32
+    , sp_helpfrom_IH_minister = sp021d35
+    , sp_helpfrom_IH_therapist = sp021d36
+    , sp_helpfrom_IH_housekeeper = sp021d37
+    , sp_helpfrom_IH_none = sp021dno
+  ) %>% 
+  dplyr::mutate_if(haven::is.labelled, haven::as_factor)
+
+```
+
+
+```{r technicalVariables}
+techv_file_path = paste(files_path,"/sharew8_rel8-0-0_technical_variables.sav", sep = "")
+techv_file = read_sav(techv_file_path)
+techv_file = techv_file %>% 
+  dplyr::select(
+    mergeid
+    , hhid8 
+    , mergeidp8
+    , coupleid8
+    , techv_residencetype = mn024_
+  ) %>% 
+  dplyr::mutate_if(haven::is.labelled, haven::as_factor)
+```
+
+
+```{r merge-all-files}
+share_data = join_all(list(
+  weights_file, dn_file, ph_file, hc_file, sp_file, techv_file
+  )
+  , by=c('mergeid','hhid8', 'mergeidp8', 'coupleid8')
+  , type='left') 
+
+share_data = share_data[!is.na(share_data$wght_individual),]
+```
+
+# Analysis
+
+```{r, fig.cap = "Surveys by Country"}
+world = ne_countries(scale = "medium", returnclass = "sf")
+Europe = world[which(world$continent == "Europe"),]
+
+surveys = share_data %>% 
+  dplyr::group_by(dn_country) %>% 
+  dplyr::summarise(population = sum(wght_individual, na.rm = T)) 
+
+surveys %>% 
+  merge(Europe, by.x = "dn_country", by.y = "name", all.y = T) %>% 
+  ggplot() + 
+  geom_sf(aes(geometry = geometry, fill = population)) +
+  coord_sf(xlim = c(-25,50), ylim = c(35,70), expand = FALSE) + 
+  theme_minimal() + 
+  scale_fill_gradient(low = "white", high = "blue")
+```
+
+
+```{r}
+surveys %>% 
+  dplyr::arrange(desc(population)) %>% 
+  kbl(
+    format = "html"
+    , col.names = c("Country", "Surveys")
+  ) %>%
+    kable_styling()
+```
+
+```{r, fig.cap="Gender distribution by Country"}
+grid.arrange(
+share_data %>% 
+  dplyr::group_by(dn_country) %>% 
+  dplyr::mutate(tot_pop = sum(wght_individual)) %>% 
+  ggplot(
+    aes(x = wght_individual, y = fct_reorder(dn_country, tot_pop), fill = dn_gender)
+  ) + 
+  geom_bar(stat = "identity") + 
+  theme(legend.position = "none") + xlab("Population") + ylab("Country")
+, share_data %>% 
+  dplyr::group_by(dn_country) %>% 
+  dplyr::mutate(tot_pop = sum(wght_individual)) %>% 
+  ggplot(
+    aes(x = wght_individual, y = fct_reorder(dn_country, tot_pop), fill = dn_gender)
+  ) + 
+  geom_bar(position = "fill",stat = "identity") + 
+  geom_vline(xintercept = 0.5, linetype = "dashed") + 
+  scale_x_continuous(labels = scales::percent_format()) + xlab("Population %") + ylab("Country")
+, ncol = 2)
+```
+
+```{r, fig.cap="Age Distribution by Gender"}
+grid.arrange(
+share_data %>% 
+  dplyr::filter(!is.na(wght_individual)) %>%
+  ggplot(
+    aes(
+      x = est_age 
+      , col = dn_gender
+    )
+  ) + 
+  geom_density() + 
+  xlab("Age") + ylab("Density") +
+  theme(legend.position = 'none')
+,
+share_data %>% 
+  dplyr::filter(!is.na(wght_individual)) %>%
+  ggplot(
+    aes(
+      x = est_age 
+      , col = dn_gender
+    )
+  ) + 
+  geom_boxplot()+ 
+  xlab("Age") + ylab("Density")
+, ncol = 2
+)
+```
+
+```{r, fig.cap = "Age Distribution by Gender and Country"}
+age_profiles = share_data %>% 
+  dplyr::select(dn_country, est_age) %>% 
+  dplyr::group_by(dn_country) %>% 
+  dplyr::summarise(
+    q1 = quantile(est_age, prob = 0.25, na.rm = T)
+    , q2 = quantile(est_age, prob = 0.5, na.rm = T)
+    , q3 = quantile(est_age, prob = 0.75, na.rm = T)
+    , iqr = q3 - q1
+  ) 
+
+clusters = kmeans(age_profiles %>% select(-dn_country), 4)
+
+
+share_data %>% 
+  dplyr::left_join(data.frame(dn_country = age_profiles$dn_country, group = clusters$cluster), by = "dn_country") %>% 
+  ggplot(
+    aes(
+      x = est_age
+      , y = dn_country
+      , fill = dn_gender
+    )
+  ) + 
+  geom_boxplot() +
+  facet_wrap(~group, scale = "free")
+```
+
+
+```{r, fig.cap="Presence of Long Term ill in respondents" }
+yes_size = share_data %>% 
+  dplyr::group_by(dn_country, ph_longtermill) %>% 
+  dplyr::summarise(tot_lti = sum(wght_individual)) %>% 
+  dplyr::mutate(perc_lti = tot_lti / sum(tot_lti)) %>%
+  dplyr::filter(ph_longtermill == "Yes") %>% 
+  dplyr::arrange(perc_lti) %>% 
+  dplyr::pull(dn_country)
+
+share_data %>% 
+  ggplot(
+    aes(y = factor(dn_country, levels = yes_size), x = wght_individual, fill = ph_longtermill)
+  ) + 
+  geom_bar(stat = "identity", position = "fill") + 
+  geom_vline(xintercept = 0.5, linetype = "dashed") + 
+  scale_x_continuous(labels = scales::percent_format()) 
+```
+
+```{r}
+
+cond_data = share_data %>% 
+  dplyr::select(est_age, dn_gender, wght_individual, starts_with("ph_doccond")) %>% 
+  reshape2::melt(id = c("est_age", "dn_gender", "wght_individual")) %>%
+  dplyr::group_by(est_age, dn_gender, variable, value) %>% 
+  dplyr::summarise(pop = sum(wght_individual)) %>% 
+  dplyr::mutate(freq = pop / sum(pop)) %>% 
+  dplyr::filter(value == "Selected", freq < 1) %>% 
+  dplyr::mutate(variable = gsub("ph_doccond_", "", variable)) 
+
+male_cond_plot = cond_data %>% 
+  filter(dn_gender == "Male") %>% 
+  ggplot(
+    aes(x = est_age, y = freq, col = variable) 
+  ) + 
+  geom_line() 
+
+female_cond_plot = cond_data %>% 
+  filter(dn_gender == "Female") %>% 
+  ggplot(
+    aes(x = est_age, y = freq, col = variable) 
+  ) + 
+  geom_line()
+
+grid.arrange(
+  male_cond_plot + ggtitle("Condition Prevalence in Males")
+  , female_cond_plot + ggtitle("Condition Prevalence in Females")
+  , ncol = 2
+)
+
+```
+
+```{r, fig.cap = "Conditions Correlation by Gender (Left male, Right female)" }
+#install.packages("psych")
+
+male_doccond_cor = share_data %>% 
+  dplyr::filter(dn_gender == "Male") %>% 
+  dplyr::select(starts_with("ph_doccond")) %>% 
+  dplyr::select(-ph_doccond_none) %>%
+  dplyr::mutate_at(vars(contains("ph_doccond")), ~(as.numeric(.) %/% 4))
+
+names(male_doccond_cor) = gsub("ph_doccond_", "", names(male_doccond_cor))
+male_doccond_cor = male_doccond_cor %>% tetrachoric(weight = share_data %>% dplyr::filter(dn_gender == "Male") %>% dplyr::select(wght_individual) %>% pull()) 
+
+female_doccond_cor = share_data %>% 
+  dplyr::filter(dn_gender == "Female") %>% 
+  dplyr::select(starts_with("ph_doccond")) %>% 
+  dplyr::select(-ph_doccond_none) %>%
+  dplyr::mutate_at(vars(contains("ph_doccond")), ~(as.numeric(.) %/% 4))
+
+names(female_doccond_cor) = gsub("ph_doccond_", "", names(female_doccond_cor))
+female_doccond_cor = female_doccond_cor %>% tetrachoric(weight = share_data %>% dplyr::filter(dn_gender == "Female") %>% dplyr::select(wght_individual) %>% pull()) 
+
+par(mfrow = c(1,2))
+corrplot(male_doccond_cor$rho, method = "square", diag = F, type = "upper", tl.col="black", col = corrplot_defaultp_colpallete, col.lim = c(-1,1))
+corrplot(female_doccond_cor$rho, method = "square", diag = F, type = "upper", tl.col="black", col = corrplot_defaultp_colpallete, col.lim = c(-1,1))
+
+```
+
+```{r, fig.cap = "Overall Correlationbetween Condition and ADL inabilities" }
+doccond_adl_data = share_data %>% 
+  dplyr::select(starts_with("ph_doccond"), starts_with("ph_ADL")) %>% 
+  dplyr::mutate_all(~(as.numeric(.) %/% 4)) %>% 
+  dplyr::select(-ends_with("none"), -ends_with("other"))
+
+
+cond_adl_cor= doccond_adl_data %>% tetrachoric(weight = share_data$wght_individual) 
+cond_adl_cor = cond_adl_cor$rho
+
+cond_adla_cor = cond_adl_cor[grep("doccond", rownames(cond_adl_cor)),]
+cond_adla_cor = cond_adla_cor[, grep("ADLa", colnames(cond_adla_cor))]
+
+cond_adlb_cor = cond_adl_cor[grep("doccond", rownames(cond_adl_cor)),]
+cond_adlb_cor = cond_adlb_cor[, grep("ADLb", colnames(cond_adlb_cor))]
+
+rownames(cond_adla_cor) = gsub("ph_doccond_", "", rownames(cond_adla_cor))
+colnames(cond_adla_cor) = gsub("ph_ADLa_", "", colnames(cond_adla_cor))
+rownames(cond_adlb_cor) = gsub("ph_doccond_", "", rownames(cond_adlb_cor))
+colnames(cond_adlb_cor) = gsub("ph_ADLb_", "", colnames(cond_adlb_cor))
+
+par(mfrow = c(1,2))
+corrplot(cond_adla_cor, is.corr = F, tl.col="black", col = corrplot_defaultp_colpallete, col.lim = c(-1,1))
+corrplot(cond_adlb_cor, is.corr = F, tl.col="black", col = corrplot_defaultp_colpallete, col.lim = c(-1,1))
+```
+
+```{r, fig.cap = "Correlation Between ADL inability and hiring of proffesional Help"}
+cond_help_data  = share_data %>% 
+  dplyr::select(dn_gender, wght_individual, starts_with("ph_doccond"), starts_with("hc_profhelp")) %>%
+  dplyr::select(-ends_with("hrs"), -ends_with("wks"), -ends_with("none")) %>% 
+  dplyr::mutate(across(!dn_gender & !wght_individual, ~(as.numeric(.) %/% 4)))
+
+male_cond_help_cor = cond_help_data %>% 
+  dplyr::filter(dn_gender == "Male") %>% 
+  dplyr::select(-dn_gender, -wght_individual) %>%
+  tetrachoric(weight = cond_help_data %>% dplyr::filter(dn_gender == "Male") %>% dplyr::select(wght_individual) %>% pull())
+
+male_cond_help_cor = male_cond_help_cor$rho
+male_cond_help_cor = male_cond_help_cor[grep("doccond", rownames(male_cond_help_cor)),]
+male_cond_help_cor = male_cond_help_cor[,grep("hc_profhelp", colnames(male_cond_help_cor))]
+
+
+female_cond_help_cor = cond_help_data %>% 
+  dplyr::filter(dn_gender == "Female") %>% 
+  dplyr::select(-dn_gender, -wght_individual) %>%
+  tetrachoric(weight = cond_help_data %>% dplyr::filter(dn_gender == "Female") %>% dplyr::select(wght_individual) %>% pull())
+
+female_cond_help_cor = female_cond_help_cor$rho
+female_cond_help_cor = female_cond_help_cor[grep("doccond", rownames(female_cond_help_cor)),]
+female_cond_help_cor = female_cond_help_cor[,grep("hc_profhelp", colnames(female_cond_help_cor))]
+
+par(mfrow = c(1,2))
+
+rownames(male_cond_help_cor) = gsub("ph_doccond_", "", rownames(male_cond_help_cor))
+colnames(male_cond_help_cor) = gsub("hc_profhelp_", "", colnames(male_cond_help_cor))
+rownames(female_cond_help_cor) = gsub("ph_doccond_", "", rownames(female_cond_help_cor))
+colnames(female_cond_help_cor) = gsub("hc_profhelp_", "", colnames(female_cond_help_cor))
+
+corrplot(
+  male_cond_help_cor
+  , is.corr = F
+  , tl.col = "black"
+  , col = corrplot_defaultp_colpallete
+  , col.lim = c(-1,1)
+)
+
+corrplot(
+  female_cond_help_cor
+  , is.corr = F
+  , tl.col = "black"
+  , col = corrplot_defaultp_colpallete
+  , col.lim = c(-1,1)
+)
+```
+
+
+
+```{r}
+cond_adl_cor = share_data %>% 
+  dplyr::select(starts_with("ph_ADL"), starts_with("hc_profhelp")) %>%
+  dplyr::select(-ends_with("wks"), -ends_with("hrs"), -ends_with("none")) %>%
+  dplyr::mutate_all(~(as.numeric(.)%/%4)) %>% 
+  tetrachoric(weight = share_data$wght_individual)
+
+
+cond_adl_cor = cond_adl_cor$rho
+
+
+
+cond_adl_cor = cond_adl_cor[,grep("profhelp", colnames(cond_adl_cor))]
+
+colnames(cond_adl_cor) = gsub("hc_profhelp_", "", colnames(cond_adl_cor))
+
+cond_adla_cor = cond_adl_cor[grep("ADLa", rownames(cond_adl_cor)),]
+cond_adlb_cor = cond_adl_cor[grep("ADLb", rownames(cond_adl_cor)),]
+
+rownames(cond_adla_cor) = gsub("ph_ADLa_", "", rownames(cond_adla_cor))
+rownames(cond_adlb_cor) = gsub("ph_ADLb_", "", rownames(cond_adlb_cor))
+
+par(mfrow = c(1,2))
+corrplot(cond_adla_cor, is.corr = F, col.lim = c(-1,1), col = corrplot_defaultp_colpallete)
+corrplot(cond_adlb_cor, is.corr = F, col.lim = c(-1,1), col = corrplot_defaultp_colpallete)
+
+
+```
+
+```{r}
+common_conditions = share_data %>% 
+  dplyr::select(wght_individual, dn_country, dn_gender, starts_with("ph_doccond")) %>% 
+  dplyr::mutate_at(
+    vars(contains("doccond"))
+    , ~((as.numeric(.) %/% 4)* wght_individual)
+  ) %>% 
+  dplyr::group_by(dn_country, dn_gender) %>% 
+  dplyr::summarise_all(~(sum(., na.rm = T))) %>% 
+  dplyr::mutate_at(vars(contains("doccond")), ~(. / wght_individual)) %>% 
+  dplyr::select(-wght_individual, -ends_with("none"), -ends_with("other")) %>% 
+  dplyr::ungroup() %>%
+  reshape2::melt(id = c("dn_country", "dn_gender")) %>% 
+  dplyr::group_by(dn_country, dn_gender) %>% 
+  dplyr::arrange(desc(value)) %>% 
+  dplyr::slice(1:3) %>% 
+  dplyr::mutate(variable = gsub("ph_doccond_","", variable))
+```
+
+
+```{r, fig.cap = "3 Most common conditions in Malesby country"}
+common_conditions %>% 
+  dplyr::filter(dn_gender == "Male") %>% 
+  ggplot(
+    aes(x = reorder(variable, value), y = value, fill = variable)
+  ) + 
+  geom_bar(stat = "identity")+
+  facet_wrap(~dn_country, scale = "free_x") + 
+  theme(axis.text.x = element_blank())
+```
+
+
+```{r, fig.cap = "3 Most common conditions in Females by country"}
+common_conditions %>% 
+  dplyr::filter(dn_gender == "Female") %>% 
+  ggplot(
+    aes(x = reorder(variable, value), y = value, fill = variable)
+  ) + 
+  geom_bar(stat = "identity")+
+  facet_wrap(~dn_country, scale = "free_x") + 
+  theme(axis.text.x = element_blank())
+```
+
+```{r}
+
+receives_help = share_data %>% 
+  dplyr::select(wght_individual, dn_country, dn_gender, sp_helpfrom_OH, sp_helpfrom_IH) %>% 
+  dplyr::mutate(
+    sp_helpfrom_OH = ifelse(!is.na(sp_helpfrom_OH)  & sp_helpfrom_OH == "Yes", 1, 0)
+    , sp_helpfrom_IH = ifelse(!is.na(sp_helpfrom_IH) & sp_helpfrom_IH == "Yes", 1, 0)
+  ) %>% 
+  dplyr::mutate(
+    help = case_when(
+      sp_helpfrom_OH == 0 & sp_helpfrom_IH == 0 ~ "None", 
+      sp_helpfrom_OH == 1 & sp_helpfrom_IH == 0 ~ "Only Outside HH", 
+      sp_helpfrom_OH == 0 & sp_helpfrom_IH == 1 ~ "Only Inside HH", 
+      sp_helpfrom_OH == 1 & sp_helpfrom_IH == 1 ~ "Both" 
+    )
+  ) 
+
+grid.arrange(
+receives_help %>% 
+  ggplot(
+    aes(x = wght_individual, y = dn_country, fill = help) 
+  ) + 
+  geom_bar(stat = "sum", show.legend = c(size = F))
+,
+receives_help %>% 
+  ggplot(
+    aes(x = wght_individual, y = dn_country, fill = help) 
+  ) + 
+  geom_bar(stat = "identity", position = "fill")
+, ncol= 2)
+```
+
+```{r}
+prof_help = share_data %>% 
+  dplyr::select(wght_individual, dn_country, starts_with("hc_profhelp")) %>% 
+  dplyr::select(-ends_with("hrs"), -ends_with("wks")) %>% 
+  dplyr::mutate(across(contains("profhelp"), ~(as.numeric(. == "Selected") * wght_individual))) %>% 
+  dplyr::select(-wght_individual) %>% 
+  melt(id = c("dn_country")) %>% 
+  dplyr::mutate(variable = gsub("hc_profhelp_", "", variable)) 
+
+grid.arrange(
+prof_help %>% 
+  ggplot(
+    aes(y = dn_country, x = value, fill = variable)
+  ) + 
+  geom_bar(stat = "sum", show.legend = c(size = F))
+,
+prof_help %>% 
+  ggplot(
+    aes(y = dn_country, x = value, fill = variable)
+  ) + 
+  geom_bar(stat = "identity", position = "fill")
+, ncol = 2)
+```
+```{r}
+country_pop= share_data %>% dplyr::group_by(dn_country, dn_gender) %>% dplyr::summarise(country_pop = sum(wght_individual))
+
+common_OH_carers = share_data %>% 
+  dplyr::select(wght_individual, dn_country, dn_gender, starts_with("sp_helpfrom_OH_")) %>% 
+  reshape2::melt(id = c("wght_individual", "dn_country", "dn_gender")) %>% 
+  dplyr::select(-variable) %>% 
+  dplyr::group_by(dn_country, dn_gender, value) %>% 
+  dplyr::summarise(group_pop = sum(wght_individual)) %>% 
+  merge(country_pop, by = c("dn_country", "dn_gender")) %>% 
+  dplyr::filter(!is.na(value)) %>%
+  dplyr::mutate(group_perc = group_pop/country_pop) %>% 
+  dplyr::group_by(dn_country, dn_gender) %>% 
+  dplyr::arrange(desc(group_perc)) %>% 
+  dplyr::slice(1:3)
+```
+
+
+```{r, fig.cap="Most common Carers for Males by Country"}
+common_OH_carers %>% 
+  dplyr::filter(dn_gender == "Male") %>% 
+  ggplot(aes(x = value, y = group_perc, fill = value)) + 
+  geom_bar(stat = "identity") +
+  facet_wrap(~dn_country, scale = "free_x") + 
+  theme(axis.text.x = element_blank())
+```
+
+
+```{r, fig.cap="Most common Carers for Females by Country"}
+common_OH_carers %>% 
+  dplyr::filter(dn_gender == "Female") %>% 
+  ggplot(aes(x = value, y = group_perc, fill = value)) + 
+  geom_bar(stat = "identity") +
+  facet_wrap(~dn_country, scale = "free_x") + 
+  theme(axis.text.x = element_blank())
+```
+
+```{r}
+share_data %>% 
+  dplyr::select(wght_individual, est_age, , starts_with("sp_helpfrom_OH_")) %>% 
+  reshape2::melt(id = c("wght_individual", "est_age")) %>% 
+  dplyr::select(-variable) %>%
+  dplyr::group_by(est_age, value) %>% 
+  dplyr::summarise(group_pop = sum(wght_individual)) %>% 
+  dplyr::ungroup() %>% 
+  dplyr::group_by(est_age) %>% 
+  dplyr::mutate(age_pop = sum(group_pop), group_perc = group_pop / age_pop) %>% 
+  dplyr::ungroup() %>% 
+  dplyr::filter(!is.na(value)) %>% 
+  dplyr::select(est_age, value, group_perc) %>%
+  dplyr::group_by(est_age) %>% 
+  dplyr::arrange(desc(group_perc)) %>% 
+  dplyr::slice(1:3) %>% 
+  ggplot(aes(x = est_age, y = group_perc , fill = value)) + 
+  geom_bar(stat = "identity") 
+```
+
+
+```{r}
+
+library(strex)
+
+share_data %>% 
+  dplyr::select(wght_individual, dn_country, dn_gender, starts_with("sp_helpfrom_IH_")) %>% 
+  melt(id = c("wght_individual", "dn_country", "dn_gender")) %>% 
+  dplyr::filter(value == "Selected") %>% 
+  dplyr::select(-value) %>% 
+  dplyr::mutate(variable = str_after_nth(as.character(variable), "_", 3)) %>% 
+  dplyr::group_by(dn_country, dn_gender, variable) %>% 
+  dplyr::summarise(group_pop = sum(wght_individual)) %>% 
+  merge(country_pop, by = c("dn_country", "dn_gender")) %>% 
+  dplyr::mutate(group_freq = group_pop / country_pop) %>% 
+  dplyr::ungroup() %>% 
+  dplyr::group_by(dn_country, dn_gender) %>% 
+  dplyr::arrange(desc(group_freq)) %>% 
+  dplyr::slice(1:3) %>% 
+  dplyr::filter(dn_gender == "Male") %>%
+  ggplot(aes(y = group_freq, x = variable, fill = variable)) + 
+  geom_bar(stat = "identity") + 
+  facet_wrap(~dn_country, scale = "free_x") + 
+  theme(axis.text.x = element_blank())
+
+```
+
+
+# Export *share_data* dataframe to rdata 
+
+```{r}
+save(share_data, file = "share_dataframe.RData")
+```
+
